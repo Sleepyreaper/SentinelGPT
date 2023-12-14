@@ -1,0 +1,374 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "actions": {
+            "Compose_-_Format_JSON_to_HTML": {
+                "inputs": "@replace(variables('HTTP2Response'),'\\n','<br/>')",
+                "runAfter": {
+                    "Set_variable_'HTTP2Response'_-_JSON_result_from_KQL_Prompt": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Compose"
+            },
+            "Compose_HTML_(remove_remaining_JSON_headers)": {
+                "inputs": "@slice(variables('HTMLwHeader'),146)",
+                "runAfter": {
+                    "Set_variable_-_'HTMLwHeader'_-_Set_to_Output_from_previous_Compose_function": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Compose"
+            },
+            "For_each_Text_block_returned_by_Incident_Title_Prompt,_Set_AOAIResponse": {
+                "actions": {
+                    "Set_variable_AOIAIResponse1_to_Output_from_Incident_Title_prompt": {
+                        "inputs": {
+                            "name": "AOAIResponse1",
+                            "value": "@items('For_each_Text_block_returned_by_Incident_Title_Prompt,_Set_AOAIResponse')?['text']"
+                        },
+                        "runAfter": {},
+                        "type": "SetVariable"
+                    }
+                },
+                "foreach": "@body('Parse_JSON_from_Incident_Description')?['choices']",
+                "runAfter": {
+                    "Parse_JSON_from_Incident_Description": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Foreach"
+            },
+            "Get_secret_AOAI_Session_Key": {
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['keyvault']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/secrets/@{encodeURIComponent('AOAISessionKey')}/value"
+                },
+                "runAfter": {
+                    "Initialize_variable_'HTMLwHeader'_-_KQL_Prompt_converted_to_HTML": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection"
+            },
+            "Initialize_variable_'AOAIResponse_1'_-_Return_text_for_Incident_Description": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "AOAIResponse1",
+                            "type": "string",
+                            "value": "-"
+                        }
+                    ]
+                },
+                "runAfter": {},
+                "type": "InitializeVariable"
+            },
+            "Initialize_variable_'HTMLwHeader'_-_KQL_Prompt_converted_to_HTML": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "HTMLwHeader",
+                            "type": "string",
+                            "value": "."
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "Initialize_variable_'HTTP2Response'_-_Return_text_from_KQL_Prompt": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable"
+            },
+            "Initialize_variable_'HTTP2Response'_-_Return_text_from_KQL_Prompt": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "HTTP2response",
+                            "type": "string",
+                            "value": "."
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "Initialize_variable_'AOAIResponse_1'_-_Return_text_for_Incident_Description": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable"
+            },
+            "Parse_JSON_from_Incident_Description": {
+                "inputs": {
+                    "content": "@body('Prompt_With_Incident_Title')",
+                    "schema": {
+                        "properties": {
+                            "choices": {
+                                "items": {
+                                    "properties": {
+                                        "finish_reason": {
+                                            "type": "string"
+                                        },
+                                        "index": {
+                                            "type": "integer"
+                                        },
+                                        "logprobs": {},
+                                        "text": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "text",
+                                        "logprobs"
+                                    ],
+                                    "type": "object"
+                                },
+                                "type": "array"
+                            },
+                            "created": {
+                                "type": "integer"
+                            },
+                            "id": {
+                                "type": "string"
+                            },
+                            "model": {
+                                "type": "string"
+                            },
+                            "object": {
+                                "type": "string"
+                            },
+                            "usage": {
+                                "properties": {
+                                    "completion_tokens": {
+                                        "type": "integer"
+                                    },
+                                    "prompt_tokens": {
+                                        "type": "integer"
+                                    },
+                                    "total_tokens": {
+                                        "type": "integer"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        },
+                        "type": "object"
+                    }
+                },
+                "runAfter": {
+                    "Prompt_With_Incident_Title": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ParseJson"
+            },
+            "Post_message_in_Security_Operation_team_(Security_Incidents_channel)": {
+                "inputs": {
+                    "body": {
+                        "messageBody": "<p>From Sentinel<br>\n<br>\n\"@{triggerBody()?['object']?['properties']?['title']}\" means @{variables('AOAIResponse1')}<br>\n<br>\n<br>\nTo hunt for this event, use the following KQL as an example<br>\n<br>\n@{outputs('Compose_HTML_(remove_remaining_JSON_headers)')}</p>",
+                        "recipient": {
+                            "channelId": "-",
+                            "groupId": "-"
+                        }
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['teams_1']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/beta/teams/conversation/message/poster/Flow bot/location/@{encodeURIComponent('Channel')}"
+                },
+                "runAfter": {
+                    "Compose_HTML_(remove_remaining_JSON_headers)": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection"
+            },
+            "Prompt_With_Incident_Title": {
+                "inputs": {
+                    "body": {
+                        "frequency_penalty": 0,
+                        "max_tokens": 2048,
+                        "presence_penalty": 0,
+                        "prompt": "Azure Sentinel what is @{triggerBody()?['object']?['properties']?['title']}",
+                        "stop": null,
+                        "temperature": 0.8,
+                        "top_p": 1
+                    },
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Ocp-Apim-Subscription-Key": "@body('Get_secret_AOAI_Session_Key')?['value']"
+                    },
+                    "method": "POST",
+                    "uri": "https://-/text/"
+                },
+                "runAfter": {
+                    "Get_secret_AOAI_Session_Key": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Http"
+            },
+            "Prompt_for_sample_KQL_code_to_hunt_for_Incident": {
+                "inputs": {
+                    "body": {
+                        "frequency_penalty": 0,
+                        "max_tokens": 2048,
+                        "presence_penalty": 0,
+                        "prompt": "Azure Sentinel How do I write KQL to hunt for @{triggerBody()?['object']?['properties']?['title']}",
+                        "stop": null,
+                        "temperature": 0.8,
+                        "top_p": 1
+                    },
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Ocp-Apim-Subscription-Key": "@body('Get_secret_AOAI_Session_Key')?['value']"
+                    },
+                    "method": "POST",
+                    "uri": "https://-/text/"
+                },
+                "runAfter": {
+                    "For_each_Text_block_returned_by_Incident_Title_Prompt,_Set_AOAIResponse": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Http"
+            },
+            "Send_an_email_to_Kyle_R_-_Security_Response": {
+                "inputs": {
+                    "body": {
+                        "Body": "<p>From Sentinel<br>\n<br>\n\"@{triggerBody()?['object']?['properties']?['title']}\" means @{variables('AOAIResponse1')}<br>\n<br>\n<br>\nTo hunt for this event, use the following KQL as an example<br>\n<br>\n@{variables('HTTP2response')}<br>\n<br>\n-----------<br>\n<br>\n</p>",
+                        "Importance": "Normal",
+                        "Subject": "@triggerBody()?['object']?['properties']?['title']",
+                        "To": "kyler@onemtc.net"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['office365']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/v2/Mail"
+                },
+                "runAfter": {
+                    "Post_message_in_Security_Operation_team_(Security_Incidents_channel)": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection"
+            },
+            "Set_variable_'HTTP2Response'_-_JSON_result_from_KQL_Prompt": {
+                "inputs": {
+                    "name": "HTTP2response",
+                    "value": "@{body('Prompt_for_sample_KQL_code_to_hunt_for_Incident')}"
+                },
+                "runAfter": {
+                    "Prompt_for_sample_KQL_code_to_hunt_for_Incident": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "SetVariable"
+            },
+            "Set_variable_-_'HTMLwHeader'_-_Set_to_Output_from_previous_Compose_function": {
+                "inputs": {
+                    "name": "HTMLwHeader",
+                    "value": "@{outputs('Compose_-_Format_JSON_to_HTML')}"
+                },
+                "runAfter": {
+                    "Compose_-_Format_JSON_to_HTML": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "SetVariable"
+            },
+            "Update_Incident_with_KQL_Sample_code_as_a_comment": {
+                "inputs": {
+                    "body": {
+                        "incidentArmId": "@triggerBody()?['object']?['id']",
+                        "message": "<p>The following sample KQL can assist with hunting<br>\n@{outputs('Compose_HTML_(remove_remaining_JSON_headers)')}</p>"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel_2']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/Incidents/Comment"
+                },
+                "runAfter": {
+                    "Send_an_email_to_Kyle_R_-_Security_Response": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection"
+            }
+        },
+        "contentVersion": "1.0.0.0",
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "defaultValue": {},
+                "type": "Object"
+            }
+        },
+        "triggers": {
+            "Microsoft_Sentinel_incident": {
+                "inputs": {
+                    "body": {
+                        "callback_url": "@{listCallbackUrl()}"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "path": "/incident-creation"
+                },
+                "type": "ApiConnectionWebhook"
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "value": {
+                "azuresentinel": {
+                    "connectionId": "/subscriptions/595a74d5-5d8a-421d-b364-979ba24a6489/resourceGroups/EXP-AVD-RG/providers/Microsoft.Web/connections/azuresentinel-Sentinel-ChatGPT-Teams",
+                    "connectionName": "azuresentinel-Sentinel-ChatGPT-Teams",
+                    "connectionProperties": {
+                        "authentication": {
+                            "type": "ManagedServiceIdentity"
+                        }
+                    },
+                    "id": "/subscriptions/595a74d5-5d8a-421d-b364-979ba24a6489/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel"
+                },
+                "azuresentinel_2": {
+                    "connectionId": "/subscriptions/595a74d5-5d8a-421d-b364-979ba24a6489/resourceGroups/EXP-ChatGPT-Demos-RG/providers/Microsoft.Web/connections/azuresentinel-1",
+                    "connectionName": "azuresentinel-1",
+                    "id": "/subscriptions/595a74d5-5d8a-421d-b364-979ba24a6489/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel"
+                },
+                "keyvault": {
+                    "connectionId": "/subscriptions/595a74d5-5d8a-421d-b364-979ba24a6489/resourceGroups/EXP-ChatGPT-Demos-RG/providers/Microsoft.Web/connections/keyvault",
+                    "connectionName": "keyvault",
+                    "id": "/subscriptions/595a74d5-5d8a-421d-b364-979ba24a6489/providers/Microsoft.Web/locations/eastus/managedApis/keyvault"
+                },
+                "office365": {
+                    "connectionId": "/subscriptions/595a74d5-5d8a-421d-b364-979ba24a6489/resourceGroups/EXP-AVD-RG/providers/Microsoft.Web/connections/office365",
+                    "connectionName": "office365",
+                    "id": "/subscriptions/595a74d5-5d8a-421d-b364-979ba24a6489/providers/Microsoft.Web/locations/eastus/managedApis/office365"
+                },
+                "teams_1": {
+                    "connectionId": "/subscriptions/595a74d5-5d8a-421d-b364-979ba24a6489/resourceGroups/EXP-ChatGPT-Demos-RG/providers/Microsoft.Web/connections/teams-1",
+                    "connectionName": "teams-1",
+                    "id": "/subscriptions/595a74d5-5d8a-421d-b364-979ba24a6489/providers/Microsoft.Web/locations/eastus/managedApis/teams"
+                }
+            }
+        }
+    }
+}
